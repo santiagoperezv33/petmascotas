@@ -1,43 +1,60 @@
-from models import Pet, BST
+from model.pet import Pet
+from fastapi import HTTPException
+from service import abb_service
+from fastapi import APIRouter
 
-# Base de datos en memoria (diccionario para acceso rápido)
-pets_db = {}
+abb_service = abb_service.ABBService()
 
-# Árbol de búsqueda binaria para organizar por edad
-bst = BST()
+abb_route = APIRouter(prefix="/abb")
 
-def create_pet(pet: Pet):
-    if pet.id in pets_db:
-        return {"error": "Pet ID already exists"}, 400
-    pets_db[pet.id] = pet
-    bst.insert(pet)  # Insertar en el BST
-    return pet
+@abb_route.get("/")
+async def get_pets():
+    return abb_service.abb.root
 
-def get_pets():
-    return list(pets_db.values())
+@abb_route.post("/")
+async def create_pet(pet: Pet):
+    result = abb_service.abb.add(pet)
+    if result == "id erroneo":
+        raise HTTPException(status_code=400, detail="El ID de la mascota ya existe")
+    return {"message": "Mascota adicionada correctamente"}
 
-def get_pet(pet_id: int):
-    return pets_db.get(pet_id) or {"error": "Pet not found"}, 404
 
-def update_pet(pet_id: int, updated_pet: Pet):
-    if pet_id not in pets_db:
-        return {"error": "Pet not found"}, 404
-    if pet_id != updated_pet.id:
-        return {"error": "Pet ID cannot be changed"}, 400
-    pets_db[pet_id] = updated_pet
-    return updated_pet
+#obtener una mascota por id
+@abb_route.get("/{id}")
+async def get_pet(id: int):
+    node = abb_service.abb.root
+    while node:
+        if id < node.pet.id:
+            node = node.left
+        elif id > node.pet.id:
+            node = node.right
+        else:
+            return node.pet  # Se encontró la mascota
+    raise HTTPException(status_code=404, detail="Mascota no encontrada")
 
-def delete_pet(pet_id: int):
-    if pet_id in pets_db:
-        del pets_db[pet_id]
-        return {"message": "Pet deleted successfully"}
-    return {"error": "Pet not found"}, 404
+#Eliminar mascota por id
+@abb_route.delete("/{id}")
+async def delete_pet(id: int):
+    if abb_service.abb.root is None:
+        raise HTTPException(status_code=404, detail="El árbol está vacío")
 
-def get_pets_by_age():
-    return bst.in_order()
+    abb_service.abb.root = abb_service.abb.root.delete(id)
+    return {"message": "Mascota eliminada correctamente"}
 
-def get_average_age():
-    if not pets_db:
-        return {"message": "No pets in database"}
-    avg_age = sum(pet.age for pet in pets_db.values()) / len(pets_db)
-    return {"average_age": avg_age}
+#Actualizar mascota por id
+@abb_route.put("/{id}")
+async def update_pet(id: int, pet: Pet):
+    if abb_service.abb.root is None:
+        raise HTTPException(status_code=404, detail="El árbol está vacío")
+
+    abb_service.abb.root.update(id, pet)
+    return {"message": "Mascota actualizada correctamente"}
+
+#listar por razas
+@abb_route.get("/races")
+async def get_race_count():
+    if not abb_service.abb.root:
+        raise HTTPException(status_code=404, detail="El árbol está vacío")
+
+    race_counts = abb_service.abb.root.list_race()
+    return {"races": race_counts}
